@@ -35,6 +35,7 @@ Those long-lived domain objects now live under `src/model/`.
 
 Development layout:
 
+- `bootstrap.lua`: stable `wget run` installer entrypoint
 - `startup.lua`: development launcher that runs `/src/main.lua`
 - `src/main.lua`: runnable coordinator entrypoint
 - `src/`: runtime coordinator source code
@@ -58,6 +59,18 @@ Runtime convention:
 - `startup.lua` is only a launcher
 - `src/main.lua` is the executable entrypoint
 - all other files under `src/` are modules loaded with `require`
+
+## Installation
+
+Use `bootstrap.lua` as the operator-facing installer entrypoint. Make sure to use the "raw" file url, not the github explorer ui.
+
+- `wget run <bootstrap-url>` installs the baked-in tagged release
+- `wget run <bootstrap-url> -b <branch>` installs using a branch tip for testing
+- `wget run <bootstrap-url> -c <commit>` installs using an exact commit for testing
+- pass `--force` to the installer only when you intentionally want to replace an existing installed version directory
+
+The bootstrap only resolves the source and downloads that source's real installer.
+Installed versions still live under `/programs/inventory-coordinator/<version>/`, and mutable branch names are never used as installed version directory names.
 
 ## Persistence boundary
 
