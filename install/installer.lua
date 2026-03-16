@@ -9,13 +9,32 @@ local function combineUrl(base, path)
   return string.gsub(base, "/+$", "") .. "/" .. string.gsub(path, "^/+", "")
 end
 
-local function readRequired(prompt)
-  write(prompt)
-  local value = read()
-  if not value or value == "" then
-    error("required value was empty", 0)
+local function parseArgs(argv)
+  local options = {
+    force = false,
+    source_base_url = nil,
+  }
+
+  local index = 1
+  while index <= #argv do
+    local arg = argv[index]
+
+    if arg == "--force" then
+      options.force = true
+      index = index + 1
+    elseif arg == "--source-base-url" then
+      local value = argv[index + 1]
+      if not value or value == "" then
+        error("missing value after --source-base-url", 0)
+      end
+      options.source_base_url = value
+      index = index + 2
+    else
+      error("unknown installer argument: " .. arg, 0)
+    end
   end
-  return value
+
+  return options
 end
 
 local function ensureDir(path)
@@ -163,8 +182,16 @@ local function loadManifest(baseUrl)
   return manifest
 end
 
-local function installFiles(baseUrl, manifest)
+local function installFiles(baseUrl, manifest, force)
   local installRoot = fs.combine("/programs/" .. PROGRAM, VERSION)
+
+  if fs.exists(installRoot) then
+    if not force then
+      error("installed version already exists: " .. installRoot .. " (pass --force to replace it)", 0)
+    end
+    fs.delete(installRoot)
+  end
+
   ensureDir(installRoot)
 
   for _, relativePath in ipairs(manifest.files) do
@@ -187,13 +214,11 @@ local function shouldActivate()
   return answer == "y" or answer == "yes"
 end
 
-local baseUrl = SOURCE_BASE_URL
-if baseUrl == "REPLACE_WITH_PROGRAM_ROOT_RAW_URL" then
-  baseUrl = readRequired("Program root raw URL: ")
-end
+local options = parseArgs({ ... })
+local baseUrl = options.source_base_url or SOURCE_BASE_URL
 
 local manifest = loadManifest(baseUrl)
-installFiles(baseUrl, manifest)
+installFiles(baseUrl, manifest, options.force)
 ensureConfigTemplate(baseUrl, manifest)
 writeStartup()
 
