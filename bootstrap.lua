@@ -2,7 +2,7 @@
 -- Uses the baked-in release tag by default, or `-b <branch>` / `-c <commit>`
 -- to fetch and run that source's real installer. All other args pass through.
 local PROGRAM = "inventory-coordinator"
-local DEFAULT_VERSION = "0.1.1"
+local DEFAULT_VERSION = "0.1.0"
 local REPO_RAW_BASE_URL = "https://raw.githubusercontent.com/wradley/cc-global-sync"
 local INSTALLER_SOURCE_PATH = "install/installer.lua"
 local TEMP_INSTALLER_PATH = "/.inventory-coordinator-installer.tmp.lua"
