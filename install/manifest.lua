@@ -1,0 +1,28 @@
+return {
+  program = "inventory-coordinator",
+  role = "coordinator",
+  files = {
+    "README.md",
+    "src/main.lua",
+    "src/app/release_service.lua",
+    "src/app/runtime.lua",
+    "src/deps/log.lua",
+    "src/infra/persistence.lua",
+    "src/model/config.lua",
+    "src/model/cycle.lua",
+    "src/model/plan.lua",
+    "src/model/schedule.lua",
+    "src/model/transfer_queue.lua",
+    "src/model/warehouse_registry.lua",
+    "src/ui/coordinator_view.lua",
+    "src/ui/controller.lua",
+    "src/ui/detail_view.lua",
+    "src/ui/fmt.lua",
+    "src/ui/summary_model.lua",
+    "src/ui/summary_view.lua",
+  },
+  config_template = {
+    path = "/etc/inventory-coordinator/config.lua",
+    source_path = "install/templates/config.lua",
+  },
+}

@@ -1,8 +1,8 @@
 local PROGRAM = "inventory-coordinator"
 local ROLE = "coordinator"
-local VERSION = "0.1.0"
+local VERSION = "0.1.1"
 local SOURCE_BASE_URL = "https://raw.githubusercontent.com/wradley/cc-global-sync/refs/tags/v" .. VERSION
-local MANIFEST_SOURCE_PATH = "install/manifests/0.1.0.lua"
+local MANIFEST_SOURCE_PATH = "install/manifest.lua"
 local GENERATED_STARTUP_MARKER = "-- inventory-coordinator generated launcher"
 
 local function combineUrl(base, path)
@@ -153,7 +153,7 @@ local function loadManifest(baseUrl)
   if type(manifest) ~= "table" then
     error("installer manifest did not return a table", 0)
   end
-  if manifest.program ~= PROGRAM or manifest.role ~= ROLE or manifest.version ~= VERSION then
+  if manifest.program ~= PROGRAM or manifest.role ~= ROLE then
     error("installer manifest metadata did not match bootstrap constants", 0)
   end
   if type(manifest.files) ~= "table" or #manifest.files == 0 then
@@ -167,15 +167,12 @@ local function installFiles(baseUrl, manifest)
   local installRoot = fs.combine("/programs/" .. PROGRAM, VERSION)
   ensureDir(installRoot)
 
-  for _, file in ipairs(manifest.files) do
-    if type(file.path) ~= "string" or file.path == "" then
-      error("manifest file entry missing path", 0)
-    end
-    if type(file.source_path) ~= "string" or file.source_path == "" then
-      error("manifest file entry missing source_path for " .. file.path, 0)
+  for _, relativePath in ipairs(manifest.files) do
+    if type(relativePath) ~= "string" or relativePath == "" then
+      error("manifest file entry must be a non-empty path string", 0)
     end
 
-    download(combineUrl(baseUrl, file.source_path), fs.combine(installRoot, file.path))
+    download(combineUrl(baseUrl, relativePath), fs.combine(installRoot, relativePath))
   end
 end
 
