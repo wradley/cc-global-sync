@@ -1,10 +1,12 @@
 ---Planning, release, and assignment dispatch helpers for the coordinator.
 ---@class ReleaseService
 local M = {}
+local contracts = require("rednet_contracts")
 local log = require("deps.log")
 local persistence = require("infra.persistence")
 local Plan = require("model.plan")
 local TransferQueue = require("model.transfer_queue")
+local warehouseService = contracts.warehouse_v1
 
 ---Recompute and persist the latest plan and transfer queue.
 ---@param state CoordinatorState
@@ -133,27 +135,44 @@ function M.dispatchAssignments(state, warehouseRuntime)
 
       local batchId = assignmentBatchId(warehouseId, sourceEntry)
       if shouldDispatchAssignment(state, warehouseState, batchId, dispatchedAt) then
-        rednet.send(warehouseState.sender_id, {
-          type = "assignment_batch",
-          protocol_version = 1,
+        local ack, err = warehouseService.assignTransferRequest(warehouseState.sender_id, {
           coordinator_id = state.config.coordinator.id,
           warehouse_id = warehouseId,
-          batch_id = batchId,
-          plan_refreshed_at = cycle.plan_refreshed_at,
+          transfer_request_id = batchId,
           sent_at = dispatchedAt,
           assignments = assignments,
           total_assignments = sourceEntry.total_assignments or 0,
           total_items = sourceEntry.total_items or 0,
-        }, state.config.network.protocol)
+        })
 
-        warehouseState.last_assignment_sent_at = dispatchedAt
-        warehouseState.last_assignment_sent_batch_id = batchId
-        warehouseState.last_assignment_count = sourceEntry.total_assignments or 0
-        warehouseState.last_assignment_item_count = sourceEntry.total_items or 0
-        state.warehouses[warehouseId] = warehouseState
-        warehouseRuntime.markCycleBatchSent(state, warehouseId, batchId)
-        state.state_dirty = true
-        dispatchedWarehouses = dispatchedWarehouses + 1
+        if not ack then
+          log.warn("Dispatch failed for warehouse=%s batch=%s: %s", warehouseId, batchId, tostring(err and err.message))
+        else
+          warehouseState.last_assignment_sent_at = dispatchedAt
+          warehouseState.last_assignment_sent_batch_id = batchId
+          warehouseState.last_assignment_count = sourceEntry.total_assignments or 0
+          warehouseState.last_assignment_item_count = sourceEntry.total_items or 0
+          state.warehouses[warehouseId] = warehouseState
+          warehouseRuntime.markCycleBatchSent(state, warehouseId, batchId)
+          state.warehouse_registry:observeAssignmentAck(warehouseState.sender_id, ack)
+          state.state_dirty = true
+          dispatchedWarehouses = dispatchedWarehouses + 1
+
+          local status, statusErr = warehouseService.getTransferRequestStatus(warehouseState.sender_id, {
+            transfer_request_id = batchId,
+          })
+
+          if status then
+            state.warehouse_registry:observeTransferRequestStatus(warehouseState.sender_id, status, state.execution_cycle)
+          elseif statusErr and statusErr.code ~= "unknown_transfer_request" then
+            log.warn(
+              "Immediate transfer status poll failed for warehouse=%s batch=%s: %s",
+              warehouseId,
+              batchId,
+              tostring(statusErr.message)
+            )
+          end
+        end
       end
     end
   end

@@ -19,6 +19,8 @@ local root = projectRoot()
 -- runner must prepend the project roots explicitly for `src/*` and `tst/*`.
 prependPackagePath("/"..fs.combine(root, "src/?.lua"))
 prependPackagePath("/"..fs.combine(root, "src/?/init.lua"))
+prependPackagePath("/"..fs.combine(root, "src/deps/?.lua"))
+prependPackagePath("/"..fs.combine(root, "src/deps/?/init.lua"))
 prependPackagePath("/"..fs.combine(root, "tst/?.lua"))
 prependPackagePath("/"..fs.combine(root, "tst/?/init.lua"))
 
@@ -43,6 +45,7 @@ _G.TestTransferQueueModel = require("tests.model.test_transfer_queue")
 _G.TestCycleModel = require("tests.model.test_cycle")
 _G.TestWarehouseRegistryModel = require("tests.model.test_warehouse_registry")
 _G.TestReleaseServiceApp = require("tests.app.test_release_service")
+_G.TestRuntimeApp = require("tests.app.test_runtime")
 _G.TestUiControllerApp = require("tests.app.test_ui_controller")
 
 return os.exit(lu.LuaUnit.run())

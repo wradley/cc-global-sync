@@ -1,5 +1,8 @@
 --- Compose coordinator runtime state and expose the warehouse-facing mutations
 --- used by the main loop and UI.
+local contracts = require("rednet_contracts")
+local log = require("deps.log")
+
 ---@class CoordinatorUiState
 ---@field view '"summary"'|'"warehouse"'|'"health"'|'"config"'|string
 ---@field selected_warehouse_id string|nil
@@ -26,6 +29,16 @@ local M = {}
 local Cycle = require("model.cycle")
 local Schedule = require("model.schedule")
 local WarehouseRegistry = require("model.warehouse_registry")
+local discoveryService = contracts.discovery_v1
+local warehouseService = contracts.warehouse_v1
+
+local function coordinatorOwnerParams(state)
+  return {
+    coordinator_id = state.config.coordinator.id,
+    coordinator_address = state.config.coordinator.id,
+    claimed_at = os.epoch("utc"),
+  }
+end
 
 ---Normalize a restored warehouse record before it is bound into the registry.
 ---@param warehouseState WarehouseState
@@ -57,24 +70,79 @@ function M.new(config)
   }
 end
 
----Apply one inbound warehouse message to the registry and cycle state.
+---Receive and apply one discovery heartbeat from rednet.
 ---@param state CoordinatorState
----@param senderId integer
----@param message table
----@param protocol string
 ---@return nil
-function M.handleMessage(state, senderId, message, protocol)
-  if state.warehouse_registry:handleMessage(senderId, message, protocol, state.execution_cycle) then
+function M.handleDiscoveryHeartbeat(state)
+  local message, senderId, err = discoveryService.receive()
+  if not message then
+    if err and err.code ~= "timeout" then
+      log.warn("Ignored invalid discovery heartbeat from sender=%s: %s", tostring(senderId), tostring(err.message))
+    end
+    return
+  end
+
+  if state.warehouse_registry:handleDiscoveryHeartbeat(senderId, message) then
     state.last_message_at = os.epoch("utc")
     state.state_dirty = true
   end
 end
 
----Ask accepted warehouses for fresh snapshots over rednet.
+---Apply one legacy non-RPC warehouse message to the registry and cycle state.
 ---@param state CoordinatorState
+---@param senderId integer
+---@param message table
+---@param protocol string
 ---@return nil
-function M.pollSnapshots(state)
-  state.warehouse_registry:pollSnapshots()
+function M.handleLegacyMessage(state, senderId, message, protocol)
+  if state.warehouse_registry:handleLegacyMessage(senderId, message, protocol, state.execution_cycle) then
+    state.last_message_at = os.epoch("utc")
+    state.state_dirty = true
+  end
+end
+
+---Poll one accepted warehouse for its latest snapshot and active transfer status.
+---@param state CoordinatorState
+---@param warehouseId string
+---@param activeTransferRequestId string|nil
+---@return nil
+function M.pollWarehouse(state, warehouseId, activeTransferRequestId)
+  local warehouseState = state.warehouses[warehouseId]
+  if not warehouseState or warehouseState.state ~= "accepted" or not warehouseState.sender_id then
+    return
+  end
+
+  local snapshot, snapshotErr = warehouseService.getSnapshot(warehouseState.sender_id)
+  if snapshot then
+    state.warehouse_registry:observeSnapshot(warehouseState.sender_id, snapshot)
+    state.last_message_at = os.epoch("utc")
+    state.state_dirty = true
+  else
+    log.warn("Snapshot poll failed for warehouse=%s sender=%s: %s", warehouseId, tostring(warehouseState.sender_id), tostring(snapshotErr and snapshotErr.message))
+  end
+
+  if not activeTransferRequestId then
+    return
+  end
+
+  local status, statusErr = warehouseService.getTransferRequestStatus(warehouseState.sender_id, {
+    transfer_request_id = activeTransferRequestId,
+  })
+  if status then
+    state.warehouse_registry:observeTransferRequestStatus(warehouseState.sender_id, status, state.execution_cycle)
+    state.last_message_at = os.epoch("utc")
+    state.state_dirty = true
+    return
+  end
+
+  if statusErr and statusErr.code ~= "unknown_transfer_request" then
+    log.warn(
+      "Transfer status poll failed for warehouse=%s transfer_request=%s: %s",
+      warehouseId,
+      tostring(activeTransferRequestId),
+      tostring(statusErr.message)
+    )
+  end
 end
 
 ---Accept a pending warehouse into the active coordinator set.
@@ -82,6 +150,44 @@ end
 ---@param warehouseId string
 ---@return nil
 function M.acceptWarehouse(state, warehouseId)
+  local warehouseState = state.warehouses[warehouseId]
+  if not warehouseState or warehouseState.state ~= "pending" or not warehouseState.sender_id then
+    return
+  end
+
+  local ownerResult, ownerErr = warehouseService.getOwner(warehouseState.sender_id)
+  if not ownerResult then
+    log.warn("Failed to query owner for warehouse=%s: %s", warehouseId, tostring(ownerErr and ownerErr.message))
+    return
+  end
+
+  warehouseState.warehouse_address = ownerResult.warehouse_address or warehouseState.warehouse_address
+  state.warehouses[warehouseId] = warehouseState
+
+  local desiredOwner = coordinatorOwnerParams(state)
+  local owner = ownerResult.owner
+  if owner ~= nil then
+    if owner.coordinator_id ~= desiredOwner.coordinator_id or owner.coordinator_address ~= desiredOwner.coordinator_address then
+      log.warn(
+        "Refused to accept warehouse=%s because it is already owned by coordinator=%s",
+        warehouseId,
+        tostring(owner.coordinator_id)
+      )
+      return
+    end
+  else
+    local setOwnerResult, setOwnerErr = warehouseService.setOwner(warehouseState.sender_id, desiredOwner)
+    if not setOwnerResult then
+      log.warn("Failed to claim warehouse=%s: %s", warehouseId, tostring(setOwnerErr and setOwnerErr.message))
+      return
+    end
+
+    if not setOwnerResult.accepted then
+      log.warn("Warehouse=%s did not accept coordinator ownership claim", warehouseId)
+      return
+    end
+  end
+
   if state.warehouse_registry:accept(warehouseId) then
     state.state_dirty = true
   end

@@ -18,6 +18,35 @@ local function resetModule(name)
   end
 end
 
+local function resetRednetContracts()
+  resetModule("rednet_contracts")
+  resetModule("rednet_contracts.init")
+  resetModule("rednet_contracts.errors")
+  resetModule("rednet_contracts.schema_validation")
+  resetModule("rednet_contracts.mrpc_v1")
+  resetModule("rednet_contracts.services.warehouse_v1")
+end
+
+local function queueWarehouseResponse(message)
+  ccEnv.queueRednetReceive(17, message, "rc.mrpc_v1")
+end
+
+local function assignmentBatchId(warehouseId, sourceEntry)
+  local serialized = textutils.serialize({
+    warehouse_id = warehouseId,
+    total_assignments = sourceEntry.total_assignments or 0,
+    total_items = sourceEntry.total_items or 0,
+    assignments = sourceEntry.assignments or {},
+  })
+
+  local checksum = 0
+  for index = 1, #serialized do
+    checksum = (checksum + (string.byte(serialized, index) * index)) % 2147483647
+  end
+
+  return string.format("%s:%d:%d:%d", warehouseId, sourceEntry.total_assignments or 0, sourceEntry.total_items or 0, checksum)
+end
+
 function M:setUp()
   ccEnv.install({ epoch = 5000 })
 
@@ -51,6 +80,7 @@ function M:setUp()
       }
     end,
   }
+  resetRednetContracts()
   resetModule("app.release_service")
 end
 
@@ -155,6 +185,21 @@ function M:testReleaseCurrentPlanRecordsScheduleAndDispatchesAssignments()
       isOnline = function(_, warehouseState)
         return warehouseState.sender_id == 17
       end,
+      observeAssignmentAck = function(_, senderId, message)
+        state.warehouses.alpha.last_assignment_ack_batch_id = message.transfer_request_id
+        state.warehouses.alpha.last_assignment_ack = message
+        state.warehouses.alpha.last_assignment_ack_at = message.sent_at
+      end,
+      observeTransferRequestStatus = function(_, senderId, message)
+        state.warehouses.alpha.last_assignment_execution_batch_id = message.transfer_request_id
+        state.warehouses.alpha.last_assignment_execution = {
+          batch_id = message.transfer_request_id,
+          status = message.status,
+          total_items_requested = message.total_items_requested,
+          total_items_queued = message.total_items_queued,
+        }
+        state.warehouses.alpha.last_assignment_execution_at = message.sent_at
+      end,
     },
     schedule = {
       recordRelease = function(_, kind, releasedAt)
@@ -182,18 +227,65 @@ function M:testReleaseCurrentPlanRecordsScheduleAndDispatchesAssignments()
       }
     end,
   }
+  local expectedBatchId = assignmentBatchId("alpha", state.latest_transfer_queue.assignments_by_source.alpha)
+
+  queueWarehouseResponse({
+    type = "response",
+    protocol = {
+      name = "warehouse",
+      version = 1,
+    },
+    request_id = "req-5000-1",
+    ok = true,
+    result = {
+      warehouse_id = "alpha",
+      warehouse_address = "A1",
+      transfer_request_id = expectedBatchId,
+      assignment_count = 1,
+      item_count = 2,
+      accepted = true,
+      sent_at = 5000,
+    },
+    sent_at = 5000,
+  })
+  queueWarehouseResponse({
+    type = "response",
+    protocol = {
+      name = "warehouse",
+      version = 1,
+    },
+    request_id = "req-5000-2",
+    ok = true,
+    result = {
+      warehouse_id = "alpha",
+      warehouse_address = "A1",
+      transfer_request_id = expectedBatchId,
+      status = "queued",
+      executed_at = 5000,
+      total_assignments = 1,
+      total_items_requested = 2,
+      total_items_queued = 2,
+      assignments = {},
+      sent_at = 5000,
+    },
+    sent_at = 5000,
+  })
 
   lu.assertTrue(releaseService.releaseCurrentPlan(state, warehouseRuntime, "manual"))
 
   local sent = ccEnv.getSentMessages()
   lu.assertEquals(#recordReleaseCalls, 1)
   lu.assertEquals(recordReleaseCalls[1].kind, "manual")
-  lu.assertEquals(#sent, 1)
+  lu.assertEquals(#sent, 2)
   lu.assertEquals(sent[1].target_id, 17)
-  lu.assertEquals(sent[1].message.type, "assignment_batch")
-  lu.assertEquals(sent[1].message.plan_refreshed_at, 4321)
+  lu.assertEquals(sent[1].message.type, "request")
+  lu.assertEquals(sent[1].message.method, "assign_transfer_request")
+  lu.assertEquals(sent[1].message.params.warehouse_id, "alpha")
+  lu.assertEquals(sent[2].message.method, "get_transfer_request_status")
   lu.assertEquals(#markedBatches, 1)
   lu.assertEquals(markedBatches[1].warehouse_id, "alpha")
+  lu.assertEquals(state.warehouses.alpha.last_assignment_ack_batch_id, expectedBatchId)
+  lu.assertEquals(state.warehouses.alpha.last_assignment_execution.status, "queued")
   lu.assertTrue(state.state_dirty)
 end
 

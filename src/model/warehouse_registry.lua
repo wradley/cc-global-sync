@@ -1,3 +1,13 @@
+local function supportsWarehouseService(message)
+  for _, protocol in ipairs(message.protocols or {}) do
+    if protocol.name == "warehouse" and protocol.version == 1 and protocol.role == "server" then
+      return true
+    end
+  end
+
+  return false
+end
+
 ---@class WarehouseRegistrySnapshotCapacity
 ---@field slot_capacity_used integer|nil
 ---@field slot_capacity_free integer|nil
@@ -209,13 +219,12 @@ function WarehouseRegistry:plannableWarehouses()
 end
 
 local function applyHeartbeat(self, senderId, message, observedAt)
-  local warehouseState = self.warehouses[message.warehouse_id] or {}
+  local warehouseState = self.warehouses[message.device_id] or {}
   WarehouseRegistry.normalizeWarehouseState(warehouseState)
   warehouseState.sender_id = senderId
-  warehouseState.warehouse_id = message.warehouse_id
-  warehouseState.warehouse_address = message.warehouse_address
+  warehouseState.warehouse_id = message.device_id
   warehouseState.last_heartbeat_at = message.sent_at or observedAt
-  self.warehouses[message.warehouse_id] = warehouseState
+  self.warehouses[message.device_id] = warehouseState
 end
 
 local function applySnapshot(self, senderId, message, observedAt)
@@ -234,9 +243,19 @@ local function applyAssignmentAck(self, senderId, message, observedAt)
   WarehouseRegistry.normalizeWarehouseState(warehouseState)
   warehouseState.sender_id = senderId
   warehouseState.warehouse_id = message.warehouse_id
+  warehouseState.warehouse_address = message.warehouse_address
   warehouseState.last_assignment_ack_at = observedAt
-  warehouseState.last_assignment_ack_batch_id = message.batch_id
-  warehouseState.last_assignment_ack = message
+  warehouseState.last_assignment_ack_batch_id = message.transfer_request_id
+  warehouseState.last_assignment_ack = {
+    warehouse_id = message.warehouse_id,
+    warehouse_address = message.warehouse_address,
+    batch_id = message.transfer_request_id,
+    transfer_request_id = message.transfer_request_id,
+    assignment_count = message.assignment_count,
+    item_count = message.item_count,
+    accepted = message.accepted,
+    sent_at = message.sent_at,
+  }
   self.warehouses[message.warehouse_id] = warehouseState
 end
 
@@ -245,13 +264,26 @@ local function applyAssignmentExecution(self, senderId, message, cycle, observed
   WarehouseRegistry.normalizeWarehouseState(warehouseState)
   warehouseState.sender_id = senderId
   warehouseState.warehouse_id = message.warehouse_id
+  warehouseState.warehouse_address = message.warehouse_address
   warehouseState.last_assignment_execution_at = observedAt
-  warehouseState.last_assignment_execution_batch_id = message.batch_id
-  warehouseState.last_assignment_execution = message
+  warehouseState.last_assignment_execution_batch_id = message.transfer_request_id
+  warehouseState.last_assignment_execution = {
+    warehouse_id = message.warehouse_id,
+    warehouse_address = message.warehouse_address,
+    batch_id = message.transfer_request_id,
+    transfer_request_id = message.transfer_request_id,
+    status = message.status,
+    executed_at = message.executed_at,
+    total_assignments = message.total_assignments,
+    total_items_requested = message.total_items_requested,
+    total_items_queued = message.total_items_queued,
+    assignments = message.assignments,
+    sent_at = message.sent_at,
+  }
   self.warehouses[message.warehouse_id] = warehouseState
 
   if cycle then
-    cycle:recordExecution(message.warehouse_id, message.batch_id, message.status, observedAt)
+    cycle:recordExecution(message.warehouse_id, message.transfer_request_id, message.status, observedAt)
   end
 end
 
@@ -269,55 +301,70 @@ local function applyTrainDeparture(self, senderId, message, cycle, observedAt)
   end
 end
 
----Apply a coordinator-network message to warehouse state and the active cycle when relevant.
+---Apply a discovery heartbeat to warehouse state.
+---@param senderId integer
+---@param message table
+---@return boolean handled
+function WarehouseRegistry:handleDiscoveryHeartbeat(senderId, message)
+  if type(message) ~= "table" then
+    return false
+  end
+
+  if message.type ~= "device_discovery_heartbeat" or message.device_type ~= "warehouse_controller" then
+    return false
+  end
+
+  if not supportsWarehouseService(message) then
+    return false
+  end
+
+  applyHeartbeat(self, senderId, message, os.epoch("utc"))
+  return true
+end
+
+---Apply one snapshot result returned from `warehouse_v1.get_snapshot()`.
+---@param senderId integer
+---@param message WarehouseRegistrySnapshot
+---@return nil
+function WarehouseRegistry:observeSnapshot(senderId, message)
+  applySnapshot(self, senderId, message, os.epoch("utc"))
+end
+
+---Apply one ack result returned from `warehouse_v1.assign_transfer_request()`.
+---@param senderId integer
+---@param message table
+---@return nil
+function WarehouseRegistry:observeAssignmentAck(senderId, message)
+  applyAssignmentAck(self, senderId, message, os.epoch("utc"))
+end
+
+---Apply one transfer status result returned from `warehouse_v1.get_transfer_request_status()`.
+---@param senderId integer
+---@param message table
+---@param cycle? Cycle
+---@return nil
+function WarehouseRegistry:observeTransferRequestStatus(senderId, message, cycle)
+  applyAssignmentExecution(self, senderId, message, cycle, os.epoch("utc"))
+end
+
+---Apply a legacy coordinator-network message to warehouse state and the active cycle when relevant.
 ---@param senderId integer
 ---@param message table
 ---@param protocol string
 ---@param cycle? Cycle
 ---@return boolean handled True when the message matched the configured protocol and known message types.
-function WarehouseRegistry:handleMessage(senderId, message, protocol, cycle)
+function WarehouseRegistry:handleLegacyMessage(senderId, message, protocol, cycle)
   if protocol ~= self.config.network.protocol or type(message) ~= "table" then
     return false
   end
 
   local observedAt = os.epoch("utc")
-  if message.type == "heartbeat" then
-    applyHeartbeat(self, senderId, message, observedAt)
-    return true
-  end
-
-  if message.type == "snapshot" then
-    applySnapshot(self, senderId, message, observedAt)
-    return true
-  end
-
-  if message.type == "assignment_ack" then
-    applyAssignmentAck(self, senderId, message, observedAt)
-    return true
-  end
-
-  if message.type == "assignment_execution" then
-    applyAssignmentExecution(self, senderId, message, cycle, observedAt)
-    return true
-  end
-
   if message.type == "train_departure_notice" then
     applyTrainDeparture(self, senderId, message, cycle, observedAt)
     return true
   end
 
   return false
-end
-
----Request fresh snapshots from all accepted warehouses with a known sender id.
----@return nil
-function WarehouseRegistry:pollSnapshots()
-  for _, warehouseId in ipairs(self:sortedIds()) do
-    local warehouseState = self.warehouses[warehouseId]
-    if warehouseState and warehouseState.state == "accepted" and warehouseState.sender_id then
-      rednet.send(warehouseState.sender_id, { type = "get_snapshot" }, self.config.network.protocol)
-    end
-  end
 end
 
 return WarehouseRegistry

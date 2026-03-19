@@ -1,5 +1,19 @@
 --- Main coordinator entrypoint and event-loop orchestration.
 
+local function prependPackagePath(path)
+  if not package or type(package.path) ~= "string" then
+    return
+  end
+
+  package.path = table.concat({
+    path,
+    package.path,
+  }, ";")
+end
+
+prependPackagePath("/src/deps/?.lua")
+prependPackagePath("/src/deps/?/init.lua")
+
 local warehouseRuntime = require("app.runtime")
 local releaseService = require("app.release_service")
 local log = require("deps.log")
@@ -87,30 +101,29 @@ local function scheduleLoop()
   end
 end
 
----Inbound warehouse message loop.
+---Inbound warehouse discovery heartbeat loop.
 ---@return nil
-local function messageLoop()
+local function discoveryLoop()
   while true do
-    local senderId, message, protocol = rednet.receive(config.network.protocol)
-    warehouseRuntime.handleMessage(state, senderId, message, protocol)
+    warehouseRuntime.handleDiscoveryHeartbeat(state)
   end
 end
 
----Periodic snapshot polling loop.
+---Inbound legacy warehouse event loop.
 ---@return nil
-local function snapshotPollLoop()
+local function legacyWarehouseEventLoop()
+  while true do
+    local senderId, message, protocol = rednet.receive(config.network.protocol)
+    warehouseRuntime.handleLegacyMessage(state, senderId, message, protocol)
+  end
+end
+
+---Periodic warehouse polling loop.
+---@return nil
+local function warehousePollLoop()
   while true do
     for _, warehouseId in ipairs(state.warehouse_registry:sortedIds()) do
-      local warehouseState = state.warehouses[warehouseId]
-      if warehouseState and warehouseState.state == "accepted" and warehouseState.sender_id then
-        rednet.send(warehouseState.sender_id, {
-          type = "get_snapshot",
-          coordinator_id = config.coordinator.id,
-          cycle_active = state.execution_cycle.active or false,
-          active_batch_id = releaseService.currentBatchIdForWarehouse(state, warehouseId),
-          sent_at = os.epoch("utc"),
-        }, config.network.protocol)
-      end
+      warehouseRuntime.pollWarehouse(state, warehouseId, releaseService.currentBatchIdForWarehouse(state, warehouseId))
     end
     os.sleep(config.timing.snapshot_poll_seconds)
   end
@@ -175,8 +188,9 @@ end
 
 parallel.waitForAny(
   scheduleLoop,
-  messageLoop,
-  snapshotPollLoop,
+  discoveryLoop,
+  legacyWarehouseEventLoop,
+  warehousePollLoop,
   planRefreshLoop,
   eventRedrawLoop,
   displayRefreshLoop,

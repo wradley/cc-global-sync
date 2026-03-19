@@ -1,3 +1,6 @@
 # Local files on CraftOS
 /etc
 /var
+
+# IDE
+.vscode
