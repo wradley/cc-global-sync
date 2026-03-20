@@ -36,8 +36,6 @@ end
 ---@field last_assignment_execution_at number|nil
 ---@field last_assignment_execution_batch_id string|nil
 ---@field last_assignment_execution table|nil
----@field last_train_departure_at number|nil
----@field last_train_departure table|nil
 ---@field last_assignment_sent_at number|nil
 ---@field last_assignment_sent_batch_id string|nil
 ---@field last_assignment_count integer|nil
@@ -146,17 +144,6 @@ function WarehouseRegistry:assignmentExecutionAgeSeconds(warehouseState)
   end
 
   return math.floor((os.epoch("utc") - warehouseState.last_assignment_execution_at) / 1000)
-end
-
----Return seconds since the warehouse last reported a train departure.
----@param warehouseState WarehouseState
----@return integer|nil
-function WarehouseRegistry:trainDepartureAgeSeconds(warehouseState)
-  if not warehouseState.last_train_departure_at then
-    return nil
-  end
-
-  return math.floor((os.epoch("utc") - warehouseState.last_train_departure_at) / 1000)
 end
 
 ---Report whether the warehouse is considered online by heartbeat freshness.
@@ -278,26 +265,13 @@ local function applyAssignmentExecution(self, senderId, message, cycle, observed
     total_items_requested = message.total_items_requested,
     total_items_queued = message.total_items_queued,
     assignments = message.assignments,
+    packages = message.packages,
     sent_at = message.sent_at,
   }
   self.warehouses[message.warehouse_id] = warehouseState
 
   if cycle then
-    cycle:recordExecution(message.warehouse_id, message.transfer_request_id, message.status, observedAt)
-  end
-end
-
-local function applyTrainDeparture(self, senderId, message, cycle, observedAt)
-  local warehouseState = self.warehouses[message.warehouse_id] or {}
-  WarehouseRegistry.normalizeWarehouseState(warehouseState)
-  warehouseState.sender_id = senderId
-  warehouseState.warehouse_id = message.warehouse_id
-  warehouseState.last_train_departure_at = observedAt
-  warehouseState.last_train_departure = message
-  self.warehouses[message.warehouse_id] = warehouseState
-
-  if cycle then
-    cycle:recordDeparture(message.warehouse_id, message.sent_at or observedAt, message.train_name)
+    cycle:recordExecution(message.warehouse_id, message.transfer_request_id, message, observedAt)
   end
 end
 
@@ -345,26 +319,6 @@ end
 ---@return nil
 function WarehouseRegistry:observeTransferRequestStatus(senderId, message, cycle)
   applyAssignmentExecution(self, senderId, message, cycle, os.epoch("utc"))
-end
-
----Apply a legacy coordinator-network message to warehouse state and the active cycle when relevant.
----@param senderId integer
----@param message table
----@param protocol string
----@param cycle? Cycle
----@return boolean handled True when the message matched the configured protocol and known message types.
-function WarehouseRegistry:handleLegacyMessage(senderId, message, protocol, cycle)
-  if protocol ~= self.config.network.protocol or type(message) ~= "table" then
-    return false
-  end
-
-  local observedAt = os.epoch("utc")
-  if message.type == "train_departure_notice" then
-    applyTrainDeparture(self, senderId, message, cycle, observedAt)
-    return true
-  end
-
-  return false
 end
 
 return WarehouseRegistry

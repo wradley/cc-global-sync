@@ -14,9 +14,8 @@ function M:tearDown()
   ccEnv.restore()
 end
 
-function M:testCompletesAfterExecutionAndDeparture()
+function M:testCompletesAfterExecutionAndMatchingPackageEvidence()
   local config = Config.default()
-  config.execution.departures_required_per_warehouse = 1
   local registry = WarehouseRegistry:new(config, {
     alpha = {
       state = "accepted",
@@ -55,14 +54,37 @@ function M:testCompletesAfterExecutionAndDeparture()
   }, queue, registry))
 
   cycle:markBatchSent("alpha", "batch-1")
-  cycle:recordExecution("alpha", "batch-1", "ok", 1100)
+  cycle:recordExecution("alpha", "batch-1", {
+    status = "queued",
+    total_items_queued = 3,
+    packages = {
+      ["in"] = {},
+      ["out"] = {
+        "123-1-1",
+      },
+    },
+  }, 1100)
   lu.assertTrue(cycle.active)
 
-  cycle:recordDeparture("alpha", 1200, "Train A")
+  cycle.warehouses.beta = {
+    batch_id = nil,
+    completed = true,
+    execution_reported = true,
+    execution_reported_at = 1000,
+    reported_items_queued = 0,
+    package_ids_in = {
+      "123-1-1",
+    },
+    package_ids_out = {},
+    unmatched_outgoing = 0,
+    total_assignments = 0,
+    total_items = 0,
+  }
+  cycle:refreshProgress(1200)
 
   lu.assertFalse(cycle.active)
-  lu.assertEquals(cycle.completed_warehouses, 1)
-  lu.assertEquals(cycle.warehouses.alpha.last_train_name, "Train A")
+  lu.assertEquals(cycle.completed_warehouses, 2)
+  lu.assertEquals(cycle.warehouses.alpha.unmatched_outgoing, 0)
 end
 
 return M

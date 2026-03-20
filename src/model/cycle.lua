@@ -1,12 +1,12 @@
 ---@class CycleWarehouseEntry
 ---@field batch_id string|nil Deterministic batch identifier sent to this warehouse for the active wave.
----@field completed boolean True once execution and required departures have both been observed.
+---@field completed boolean True once execution and required package evidence have both been observed.
 ---@field execution_reported boolean True after the warehouse reports assignment execution for the active batch.
 ---@field execution_reported_at number|nil Epoch milliseconds when execution was reported.
----@field departures_seen integer Qualifying departures observed after execution.
----@field required_departures integer Departures required before this warehouse counts as complete.
----@field last_train_name string|nil Most recent qualifying train name seen for this warehouse.
----@field last_departure_at number|nil Epoch milliseconds of the most recent qualifying departure.
+---@field reported_items_queued integer Items the warehouse reported as queued for the active batch.
+---@field package_ids_in string[] Package ids observed inbound for the active batch.
+---@field package_ids_out string[] Package ids observed outbound for the active batch.
+---@field unmatched_outgoing integer Count of outbound package ids not yet seen inbound anywhere in the cycle.
 ---@field total_assignments integer Number of outbound assignments included for this warehouse.
 ---@field total_items integer Number of outbound items included for this warehouse.
 ---@field status any Last reported execution status payload for this warehouse.
@@ -53,6 +53,14 @@ local function deepCopy(value)
   return textutils.unserialize(textutils.serialize(value))
 end
 
+local function copyArray(values)
+  local copied = {}
+  for index, value in ipairs(values or {}) do
+    copied[index] = value
+  end
+  return copied
+end
+
 ---Create a cycle object from persisted data or fresh defaults.
 ---@param data? Cycle
 ---@return Cycle
@@ -83,13 +91,37 @@ function Cycle:refreshProgress(now)
     return
   end
 
+  local inboundPackages = {}
+  for _, entry in pairs(self.warehouses) do
+    for _, packageId in ipairs(entry.package_ids_in or {}) do
+      inboundPackages[packageId] = true
+    end
+  end
+
   local completed = 0
   local total = 0
   for _, entry in pairs(self.warehouses) do
     total = total + 1
-    local requiredDepartures = entry.required_departures or 0
-    local departuresSeen = entry.departures_seen or 0
-    entry.completed = entry.execution_reported and departuresSeen >= requiredDepartures
+    local unmatched = 0
+    for _, packageId in ipairs(entry.package_ids_out or {}) do
+      if not inboundPackages[packageId] then
+        unmatched = unmatched + 1
+      end
+    end
+    entry.unmatched_outgoing = unmatched
+
+    if not entry.execution_reported then
+      entry.completed = false
+    elseif (entry.total_items or 0) <= 0 then
+      entry.completed = true
+    elseif (entry.reported_items_queued or 0) <= 0 then
+      entry.completed = false
+    elseif #(entry.package_ids_out or {}) == 0 then
+      entry.completed = false
+    else
+      entry.completed = unmatched == 0
+    end
+
     if entry.completed then
       completed = completed + 1
     end
@@ -135,10 +167,10 @@ function Cycle:begin(state, queue, warehouseRegistry)
         -- cannot rely on a fresh execution echo to unblock the cycle.
         execution_reported = not hasOutboundWork,
         execution_reported_at = hasOutboundWork and nil or releasedAt,
-        departures_seen = 0,
-        required_departures = hasOutboundWork and state.config.execution.departures_required_per_warehouse or 0,
-        last_train_name = nil,
-        last_departure_at = nil,
+        reported_items_queued = 0,
+        package_ids_in = {},
+        package_ids_out = {},
+        unmatched_outgoing = 0,
         total_assignments = sourceEntry and sourceEntry.total_assignments or 0,
         total_items = sourceEntry and sourceEntry.total_items or 0,
       }
@@ -202,45 +234,25 @@ function Cycle:recordExecution(warehouseId, batchId, status, reportedAt)
     return
   end
 
+  local statusText = status
+  local queuedItems = entry.reported_items_queued or 0
+  local packagesIn = entry.package_ids_in or {}
+  local packagesOut = entry.package_ids_out or {}
+  if type(status) == "table" then
+    statusText = status.status
+    queuedItems = status.total_items_queued or 0
+    packagesIn = copyArray(status.packages and status.packages["in"] or {})
+    packagesOut = copyArray(status.packages and status.packages["out"] or {})
+  end
+
   entry.execution_reported = true
-  entry.status = status
+  entry.status = statusText
   entry.execution_reported_at = reportedAt or os.epoch("utc")
+  entry.reported_items_queued = queuedItems
+  entry.package_ids_in = packagesIn
+  entry.package_ids_out = packagesOut
   self.warehouses[warehouseId] = entry
   self:refreshProgress(reportedAt)
-end
-
----Count a qualifying train departure from a warehouse after execution and refresh completion.
----@param warehouseId string Unique warehouse identifier.
----@param departureAt? number Epoch milliseconds when the departure was observed.
----@param trainName? string Human-readable train name.
----@return nil
-function Cycle:recordDeparture(warehouseId, departureAt, trainName)
-  if not self.active then
-    return
-  end
-
-  local entry = self.warehouses and self.warehouses[warehouseId]
-  if not entry or not entry.execution_reported then
-    return
-  end
-
-  local effectiveDepartureAt = departureAt or os.epoch("utc")
-  local executionAt = entry.execution_reported_at or 0
-  if effectiveDepartureAt < executionAt then
-    return
-  end
-
-  local required = entry.required_departures or 0
-  local current = entry.departures_seen or 0
-  if current >= required then
-    return
-  end
-
-  entry.departures_seen = current + 1
-  entry.last_train_name = trainName
-  entry.last_departure_at = effectiveDepartureAt
-  self.warehouses[warehouseId] = entry
-  self:refreshProgress(effectiveDepartureAt)
 end
 
 return Cycle

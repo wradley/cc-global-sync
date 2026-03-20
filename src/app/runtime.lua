@@ -88,19 +88,6 @@ function M.handleDiscoveryHeartbeat(state)
   end
 end
 
----Apply one legacy non-RPC warehouse message to the registry and cycle state.
----@param state CoordinatorState
----@param senderId integer
----@param message table
----@param protocol string
----@return nil
-function M.handleLegacyMessage(state, senderId, message, protocol)
-  if state.warehouse_registry:handleLegacyMessage(senderId, message, protocol, state.execution_cycle) then
-    state.last_message_at = os.epoch("utc")
-    state.state_dirty = true
-  end
-end
-
 ---Poll one accepted warehouse for its latest snapshot and active transfer status.
 ---@param state CoordinatorState
 ---@param warehouseId string

@@ -109,15 +109,6 @@ local function discoveryLoop()
   end
 end
 
----Inbound legacy warehouse event loop.
----@return nil
-local function legacyWarehouseEventLoop()
-  while true do
-    local senderId, message, protocol = rednet.receive(config.network.protocol)
-    warehouseRuntime.handleLegacyMessage(state, senderId, message, protocol)
-  end
-end
-
 ---Periodic warehouse polling loop.
 ---@return nil
 local function warehousePollLoop()
@@ -189,7 +180,6 @@ end
 parallel.waitForAny(
   scheduleLoop,
   discoveryLoop,
-  legacyWarehouseEventLoop,
   warehousePollLoop,
   planRefreshLoop,
   eventRedrawLoop,

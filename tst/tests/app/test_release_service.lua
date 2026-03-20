@@ -266,6 +266,10 @@ function M:testReleaseCurrentPlanRecordsScheduleAndDispatchesAssignments()
       total_items_requested = 2,
       total_items_queued = 2,
       assignments = {},
+      packages = {
+        ["in"] = {},
+        ["out"] = {},
+      },
       sent_at = 5000,
     },
     sent_at = 5000,

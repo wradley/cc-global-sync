@@ -74,21 +74,27 @@ local function drawExecutionPage(warehouseState, cycleEntry)
   if execution then
     print("Exec status: " .. tostring(execution.status))
     print("Queued: " .. tostring(execution.total_items_queued or 0) .. "/" .. tostring(execution.total_items_requested or 0))
+    print("Pkg out: " .. tostring(#((execution.packages and execution.packages["out"]) or {})))
+    print("Pkg in: " .. tostring(#((execution.packages and execution.packages["in"]) or {})))
   else
     print("Exec status: none")
     print("Queued: n/a")
+    print("Pkg out: n/a")
+    print("Pkg in: n/a")
   end
 
   if cycleEntry then
-    print("Cycle dep: " .. tostring(cycleEntry.departures_seen or 0) .. "/" .. tostring(cycleEntry.required_departures or 0))
+    print("Cycle out: " .. tostring(#(cycleEntry.package_ids_out or {})))
+    print("Cycle in: " .. tostring(#(cycleEntry.package_ids_in or {})))
+    print("Cycle miss: " .. tostring(cycleEntry.unmatched_outgoing or 0))
     print("Cycle done: " .. tostring(cycleEntry.completed))
     print("Cycle exec: " .. tostring(cycleEntry.execution_reported))
-    print("Last train: " .. tostring(cycleEntry.last_train_name or "none"))
   else
-    print("Cycle dep: n/a")
+    print("Cycle out: n/a")
+    print("Cycle in: n/a")
+    print("Cycle miss: n/a")
     print("Cycle done: n/a")
     print("Cycle exec: n/a")
-    print("Last train: n/a")
   end
 
   print("")
@@ -108,7 +114,6 @@ local function drawNetworkPage(state, warehouseState)
   local snapshotAge = state.warehouse_registry:snapshotAgeSeconds(warehouseState)
   local assignmentAckAge = state.warehouse_registry:assignmentAckAgeSeconds(warehouseState)
   local assignmentExecutionAge = state.warehouse_registry:assignmentExecutionAgeSeconds(warehouseState)
-  local trainDepartureAge = state.warehouse_registry:trainDepartureAgeSeconds(warehouseState)
 
   term.clear()
   term.setCursorPos(1, 1)
@@ -121,7 +126,6 @@ local function drawNetworkPage(state, warehouseState)
   print("Snapshot: " .. (snapshotAge and (fmt.formatElapsed(snapshotAge) .. " ago") or "never"))
   print("Ack: " .. (assignmentAckAge and (fmt.formatElapsed(assignmentAckAge) .. " ago") or "never"))
   print("Exec: " .. (assignmentExecutionAge and (fmt.formatElapsed(assignmentExecutionAge) .. " ago") or "never"))
-  print("Departure: " .. (trainDepartureAge and (fmt.formatElapsed(trainDepartureAge) .. " ago") or "never"))
   print("Address: " .. tostring(warehouseState.warehouse_address))
   print("")
   if warehouseState.state == "pending" then

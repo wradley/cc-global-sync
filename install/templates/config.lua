@@ -16,9 +16,6 @@ return {
     sync_interval_seconds = 10 * 60,
     persist_seconds = 5,
   },
-  execution = {
-    departures_required_per_warehouse = 2,
-  },
   logging = {
     output = {
       file = "/var/inventory-coordinator/coordinator.log",

@@ -103,8 +103,7 @@ assignment_batch ----------------------------> persist batch
                                              -> execute batch
 assignment_ack <----------------------------- acknowledge receipt
 assignment_execution <----------------------- report queued work
-
-train_departure_notice <--------------------- report post-execution departures
+get_transfer_request_status <---------------> poll queued work plus package evidence
 ```
 
 The important distinction is that `get_snapshot` happens continuously, while
@@ -225,7 +224,7 @@ For each warehouse in the cycle, the coordinator tracks:
 - whether a batch was sent
 - the released `batch_id`
 - whether that warehouse reported execution
-- how many qualifying train departures have been seen after that execution
+- which package ids it reported outbound and inbound for that request
 - the reported execution status
 
 The summary screen shows cycle progress as `completed/total`.
@@ -233,11 +232,9 @@ The summary screen shows cycle progress as `completed/total`.
 Right now, a warehouse is considered cycle-complete when:
 
 - the warehouse reported an `assignment_execution` result for the released batch
-- and the coordinator has seen the configured number of train departures for that warehouse after execution
+- and every outbound package id reported for that warehouse has been observed inbound somewhere in the same cycle
 
-By default, the coordinator requires `2` departures per warehouse that had outbound work in the released cycle.
-
-Warehouses with an empty outbound batch require `0` departures and auto-complete for that cycle.
+Warehouses with an empty outbound batch still auto-complete once execution is reported.
 
 It does **not** mean:
 
@@ -264,7 +261,7 @@ Clearing a cycle with `c` means:
 
 - the coordinator is allowed to release another wave later
 
-Normally, cycles now clear automatically once all participating warehouses satisfy the execution-plus-departure rule.
+Normally, cycles now clear automatically once all participating warehouses satisfy the execution-plus-package-evidence rule.
 
 Manual clear remains available as an override.
 
@@ -280,8 +277,8 @@ Typical current flow:
 
 1. Let planning run and inspect the current queue in the coordinator UI.
 2. Let the schedule release the next wave automatically, or press `x` for a one-off sync.
-3. Watch warehouse execution status and departure progress on the detail screens.
-4. Let the cycle auto-clear after each warehouse completes its departure requirement.
+3. Watch warehouse execution status and package evidence on the detail screens.
+4. Let the cycle auto-clear after each warehouse's outbound package ids have been accounted for inbound.
 5. Use `c` only if you need to override the automatic hold.
 6. Use `p` if you want to pause or resume scheduled syncs.
 
@@ -338,8 +335,8 @@ A warehouse included in the current cycle that has reported an execution result 
 ## Known limitations
 
 - The coordinator does not yet reserve stock while items are in transit.
-- The coordinator does not yet track arrivals or in-transit packages.
-- Cycle completion is based on execution plus coarse train-departure signals, not item-level reconciliation.
+- The coordinator only sees package ids that warehouses observe from local postbox events.
+- Cycle completion is based on execution plus package-id reconciliation, not full item-content verification.
 - Manual clear is still available as an override.
 - Planning remains frequent, but execution is intentionally gated.
 

@@ -14,7 +14,7 @@ function M:tearDown()
   ccEnv.restore()
 end
 
-function M:testHandleDiscoveryHeartbeatAndLegacyDeparture()
+function M:testHandleDiscoveryHeartbeat()
   local config = Config.default()
   local registry = WarehouseRegistry:new(config, {})
 
@@ -34,19 +34,10 @@ function M:testHandleDiscoveryHeartbeatAndLegacyDeparture()
   }))
 
   lu.assertTrue(registry:accept("alpha"))
-  lu.assertTrue(registry:handleLegacyMessage(17, {
-    type = "train_departure_notice",
-    warehouse_id = "alpha",
-    warehouse_address = "A1",
-    station_name = "Export",
-    train_name = "T1",
-    sent_at = 4950,
-  }, config.network.protocol))
 
   lu.assertEquals(registry.warehouses.alpha.sender_id, 17)
   lu.assertEquals(registry.warehouses.alpha.state, "accepted")
   lu.assertEquals(registry.warehouses.alpha.last_heartbeat_at, 4900)
-  lu.assertEquals(registry.warehouses.alpha.last_train_departure.train_name, "T1")
 end
 
 function M:testObserveSnapshotAckAndTransferStatus()
@@ -95,6 +86,12 @@ function M:testObserveSnapshotAckAndTransferStatus()
     total_items_requested = 4,
     total_items_queued = 4,
     assignments = {},
+    packages = {
+      ["in"] = {},
+      ["out"] = {
+        "123-1-1",
+      },
+    },
     sent_at = 4925,
   }, cycle)
 
@@ -102,6 +99,7 @@ function M:testObserveSnapshotAckAndTransferStatus()
   lu.assertEquals(registry.warehouses.alpha.last_assignment_ack_batch_id, "tr-1")
   lu.assertEquals(registry.warehouses.alpha.last_assignment_execution_batch_id, "tr-1")
   lu.assertEquals(registry.warehouses.alpha.last_assignment_execution.batch_id, "tr-1")
+  lu.assertEquals(registry.warehouses.alpha.last_assignment_execution.packages["out"][1], "123-1-1")
   lu.assertEquals(#cycleCalls, 1)
   lu.assertEquals(cycleCalls[1].transfer_request_id, "tr-1")
 end

@@ -14,9 +14,6 @@
 ---@field sync_interval_seconds number How often the coordinator may release a new sync wave when not paused.
 ---@field persist_seconds number How often coordinator state is persisted to disk when dirty.
 
----@class ConfigExecution
----@field departures_required_per_warehouse number Train departures required after execution before a warehouse counts as cycle-complete.
-
 ---@class ConfigLoggingOutput
 ---@field file string
 ---@field level '"info"'|'"warn"'|'"error"'|'"panic"'|string
@@ -37,7 +34,6 @@
 ---@field coordinator ConfigCoordinator
 ---@field network ConfigNetwork
 ---@field timing ConfigTiming
----@field execution ConfigExecution
 ---@field logging ConfigLogging
 local Config = {}
 
@@ -86,9 +82,6 @@ function Config.default()
       sync_interval_seconds = 10 * 60,
       persist_seconds = 5,
     },
-    execution = {
-      departures_required_per_warehouse = 2,
-    },
     logging = {
       output = {
         file = "/var/inventory-coordinator/coordinator.log",
@@ -128,10 +121,6 @@ function Config.fromDeserialized(data)
 
   if type(config.timing) ~= "table" then
     error("config.timing is required", 0)
-  end
-
-  if type(config.execution) ~= "table" then
-    error("config.execution is required", 0)
   end
   if config.logging == nil then
     config.logging = {}
@@ -193,11 +182,6 @@ function Config.fromDeserialized(data)
   validatePositiveNumber(config.timing.plan_refresh_seconds, "config.timing.plan_refresh_seconds")
   validatePositiveNumber(config.timing.sync_interval_seconds, "config.timing.sync_interval_seconds")
   validatePositiveNumber(config.timing.persist_seconds, "config.timing.persist_seconds")
-
-  if type(config.execution.departures_required_per_warehouse) ~= "number"
-    or config.execution.departures_required_per_warehouse < 0 then
-    error("config.execution.departures_required_per_warehouse must be a non-negative number", 0)
-  end
 
   if type(config.logging.output.file) ~= "string" or config.logging.output.file == "" then
     error("config.logging.output.file must be a non-empty string", 0)
