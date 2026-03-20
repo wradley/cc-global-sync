@@ -57,7 +57,7 @@ local function serializeValue(value)
 end
 
 ---Install test doubles for ComputerCraft globals used by the model layer.
----@param opts? { epoch: integer|nil }
+---@param opts? { epoch: integer|nil, computer_id: integer|nil }
 ---@return nil
 function M.install(opts)
   currentEpoch = opts and opts.epoch or 0
@@ -72,6 +72,9 @@ function M.install(opts)
   _G.os = setmetatable({
     epoch = function()
       return currentEpoch
+    end,
+    getComputerID = function()
+      return opts and opts.computer_id or nil
     end,
   }, {
     __index = original.os,

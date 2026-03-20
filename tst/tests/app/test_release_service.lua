@@ -138,7 +138,8 @@ function M:testReleaseCurrentPlanRecordsScheduleAndDispatchesAssignments()
   local config = Config.default()
   local recordReleaseCalls = {}
   local markedBatches = {}
-  local state = {
+  local state
+  state = {
     config = config,
     latest_transfer_queue = {
       assignments_by_source = {

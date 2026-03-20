@@ -438,6 +438,7 @@ end
 
 local function toReceivedRequest(request)
   return {
+    protocol = request.protocol,
     request_id = request.request_id,
     method = request.method,
     params = request.params,
