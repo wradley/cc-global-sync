@@ -26,36 +26,6 @@ local function deepCopy(value, seen)
   return copy
 end
 
-local function serializeValue(value)
-  if type(value) == "table" then
-    local pieces = { "{" }
-    local first = true
-    for key, innerValue in pairs(value) do
-      if not first then
-        pieces[#pieces + 1] = ","
-      end
-      first = false
-
-      local renderedKey
-      if type(key) == "string" and key:match("^[%a_][%w_]*$") then
-        renderedKey = key
-      else
-        renderedKey = "[" .. serializeValue(key) .. "]"
-      end
-
-      pieces[#pieces + 1] = renderedKey .. "=" .. serializeValue(innerValue)
-    end
-    pieces[#pieces + 1] = "}"
-    return table.concat(pieces)
-  end
-
-  if type(value) == "string" then
-    return string.format("%q", value)
-  end
-
-  return tostring(value)
-end
-
 ---Install test doubles for ComputerCraft globals used by the model layer.
 ---@param opts? { epoch: integer|nil, computer_id: integer|nil }
 ---@return nil
@@ -66,7 +36,6 @@ function M.install(opts)
   queuedReceives = {}
 
   original.os = _G.os
-  original.textutils = _G.textutils
   original.rednet = _G.rednet
 
   _G.os = setmetatable({
@@ -79,24 +48,6 @@ function M.install(opts)
   }, {
     __index = original.os,
   })
-
-  _G.textutils = {
-    serialize = function(value)
-      return serializeValue(deepCopy(value))
-    end,
-    unserialize = function(value)
-      if type(value) == "table" then
-        return deepCopy(value)
-      end
-
-      local chunk = load("return " .. tostring(value))
-      if not chunk then
-        return nil
-      end
-
-      return chunk()
-    end,
-  }
 
   _G.rednet = {
     send = function(targetId, message, protocol)
@@ -131,7 +82,6 @@ end
 ---@return nil
 function M.restore()
   _G.os = original.os
-  _G.textutils = original.textutils
   _G.rednet = original.rednet
 end
 
