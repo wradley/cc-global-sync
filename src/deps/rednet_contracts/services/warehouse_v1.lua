@@ -34,6 +34,103 @@ local schema = require("rednet_contracts.schema_validation")
 ---@field coordinator_address string
 ---@field claimed_at integer
 
+---@class WarehouseOverviewStatus
+---@field online boolean
+---@field storage_online integer
+---@field storage_total integer
+---@field slot_capacity_used integer
+---@field slot_capacity_total integer
+---@field storages_with_unknown_capacity integer
+
+---@class WarehouseOverviewActiveTransfer
+---@field id string
+---@field received_at integer
+
+---@class WarehouseOverviewLastAck
+---@field transfer_request_id string
+---@field sent_at integer
+
+---@class WarehouseOverviewExecutionAssignmentSummary
+---@field destination string
+---@field item_count integer
+
+---@class WarehouseOverviewLastExecution
+---@field transfer_request_id string
+---@field status string
+---@field executed_at integer
+---@field assignments table<any, WarehouseOverviewExecutionAssignmentSummary>
+---@field total_items_requested integer
+---@field total_items_queued integer
+
+---@class WarehouseGetOwnerResult
+---@field warehouse_id string
+---@field warehouse_address string
+---@field owner WarehouseOwnerRecord|nil
+---@field observed_at integer
+
+---@class WarehouseGetOverviewResult
+---@field warehouse_id string
+---@field warehouse_address string
+---@field observed_at integer
+---@field status WarehouseOverviewStatus
+---@field active_transfer_request WarehouseOverviewActiveTransfer|nil
+---@field last_ack WarehouseOverviewLastAck|nil
+---@field last_execution WarehouseOverviewLastExecution|nil
+---@field recent_issues table
+
+---@class WarehouseSnapshotCapacity
+---@field slot_capacity_total integer
+---@field slot_capacity_used integer
+
+---@class WarehouseGetSnapshotResult
+---@field warehouse_id string
+---@field warehouse_address string
+---@field observed_at integer
+---@field inventory table<string, integer>
+---@field capacity WarehouseSnapshotCapacity
+
+---@class WarehouseSetOwnerResult
+---@field warehouse_id string
+---@field warehouse_address string
+---@field accepted boolean
+---@field owner WarehouseOwnerRecord|nil
+---@field sent_at integer
+
+---@class WarehouseAssignTransferRequestResult
+---@field warehouse_id string
+---@field warehouse_address string
+---@field transfer_request_id string
+---@field assignment_count integer
+---@field item_count integer
+---@field accepted boolean
+---@field sent_at integer
+
+---@class WarehouseTransferRequestStatusAssignment
+---@field assignment_id string
+---@field destination string
+---@field destination_address string
+---@field line_count integer
+---@field requested_items integer
+---@field queued_items integer
+---@field status string
+
+---@class WarehouseTransferRequestPackages
+---@field ["in"] string[]
+---@field ["out"] string[]
+
+---@class WarehouseGetTransferRequestStatusResult
+---@field warehouse_id string
+---@field warehouse_address string
+---@field transfer_request_id string
+---@field status string
+---@field executed_at integer|nil
+---@field total_assignments integer
+---@field total_items_requested integer
+---@field total_items_queued integer
+---@field assignments WarehouseTransferRequestStatusAssignment[]
+---@field packages WarehouseTransferRequestPackages
+---@field sent_at integer
+
 ---@class WarehouseSetOwnerParams
 ---@field coordinator_id string
 ---@field coordinator_address string
@@ -625,6 +722,29 @@ local function validateTransferStatusAssignment(entry, path)
   return true
 end
 
+local function validatePackageId(value, path)
+  return schema.requireString(value, path)
+end
+
+local function validateTransferStatusPackages(value, path)
+  local ok, err = schema.requireTable(value, path)
+  if not ok then
+    return false, err
+  end
+
+  ok, err = schema.requireArrayItems(value["in"], path .. "[\"in\"]", validatePackageId)
+  if not ok then
+    return false, err
+  end
+
+  ok, err = schema.requireArrayItems(value["out"], path .. "[\"out\"]", validatePackageId)
+  if not ok then
+    return false, err
+  end
+
+  return true
+end
+
 local function validateGetTransferRequestStatusResult(result)
   local ok, err = schema.requireTable(result, "result")
   if not ok then
@@ -651,6 +771,11 @@ local function validateGetTransferRequestStatusResult(result)
   end
 
   ok, err = schema.requireArrayItems(result.assignments, "result.assignments", validateTransferStatusAssignment)
+  if not ok then
+    return false, err
+  end
+
+  ok, err = validateTransferStatusPackages(result.packages, "result.packages")
   if not ok then
     return false, err
   end
@@ -806,7 +931,8 @@ end
 ---Call `warehouse_v1.get_owner()`.
 ---@param rednetId integer
 ---@param opts WarehouseServiceCallOptions|nil
----@return table|nil, table|nil
+---@return WarehouseGetOwnerResult|nil result
+---@return table|nil err
 function M.getOwner(rednetId, opts)
   return callMethod(rednetId, M.METHODS.GET_OWNER, {}, opts)
 end
@@ -814,7 +940,8 @@ end
 ---Call `warehouse_v1.get_overview()`.
 ---@param rednetId integer
 ---@param opts WarehouseServiceCallOptions|nil
----@return table|nil, table|nil
+---@return WarehouseGetOverviewResult|nil result
+---@return table|nil err
 function M.getOverview(rednetId, opts)
   return callMethod(rednetId, M.METHODS.GET_OVERVIEW, {}, opts)
 end
@@ -822,7 +949,8 @@ end
 ---Call `warehouse_v1.get_snapshot()`.
 ---@param rednetId integer
 ---@param opts WarehouseServiceCallOptions|nil
----@return table|nil, table|nil
+---@return WarehouseGetSnapshotResult|nil result
+---@return table|nil err
 function M.getSnapshot(rednetId, opts)
   return callMethod(rednetId, M.METHODS.GET_SNAPSHOT, {}, opts)
 end
@@ -831,7 +959,8 @@ end
 ---@param rednetId integer
 ---@param params WarehouseSetOwnerParams
 ---@param opts WarehouseServiceCallOptions|nil
----@return table|nil, table|nil
+---@return WarehouseSetOwnerResult|nil result
+---@return table|nil err
 function M.setOwner(rednetId, params, opts)
   return callMethod(rednetId, M.METHODS.SET_OWNER, params, opts)
 end
@@ -840,7 +969,8 @@ end
 ---@param rednetId integer
 ---@param params WarehouseAssignTransferRequestParams
 ---@param opts WarehouseServiceCallOptions|nil
----@return table|nil, table|nil
+---@return WarehouseAssignTransferRequestResult|nil result
+---@return table|nil err
 function M.assignTransferRequest(rednetId, params, opts)
   return callMethod(rednetId, M.METHODS.ASSIGN_TRANSFER_REQUEST, params, opts)
 end
@@ -849,7 +979,8 @@ end
 ---@param rednetId integer
 ---@param params WarehouseGetTransferRequestStatusParams
 ---@param opts WarehouseServiceCallOptions|nil
----@return table|nil, table|nil
+---@return WarehouseGetTransferRequestStatusResult|nil result
+---@return table|nil err
 function M.getTransferRequestStatus(rednetId, params, opts)
   return callMethod(rednetId, M.METHODS.GET_TRANSFER_REQUEST_STATUS, params, opts)
 end
