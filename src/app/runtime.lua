@@ -32,6 +32,11 @@ local WarehouseRegistry = require("model.warehouse_registry")
 local discoveryService = contracts.discovery_v1
 local warehouseService = contracts.warehouse_v1
 
+local function isDiscoveryVersionMismatch(err)
+  local path = err and err.details and err.details.path or nil
+  return path == "message.discovery_version"
+end
+
 local function coordinatorOwnerParams(state)
   return {
     coordinator_id = state.config.coordinator.id,
@@ -77,7 +82,11 @@ function M.handleDiscoveryHeartbeat(state)
   local message, senderId, err = discoveryService.receive()
   if not message then
     if err and err.code ~= "timeout" then
-      log.warn("Ignored invalid discovery heartbeat from sender=%s: %s", tostring(senderId), tostring(err.message))
+      if isDiscoveryVersionMismatch(err) then
+        log.warn("Rejected discovery heartbeat from sender=%s due to discovery version mismatch: %s", tostring(senderId), tostring(err.message))
+      else
+        log.warn("Ignored invalid discovery heartbeat from sender=%s: %s", tostring(senderId), tostring(err.message))
+      end
     end
     return
   end

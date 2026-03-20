@@ -535,23 +535,23 @@ end
 function M.receiveRequest(opts)
   local effective = mergeCallOptions(opts)
   local senderId, request, err = mrpc.receiveRequest(effective)
-  if not request then
+  if err then
     return senderId, nil, nil, err
   end
 
   local ok, method, validationErr = validateRequest(request)
-  if ok then
-    return senderId, toReceivedRequest(request), method, nil
+  if not ok then
+    if effective.auto_reply_errors ~= false and senderId ~= nil and request.request_id ~= nil then
+      mrpc.replyError(senderId, request, validationErr.code, validationErr.message, {
+        rednet_protocol = effective.rednet_protocol,
+        details = validationErr.details,
+      })
+    end
+
+    return senderId, nil, nil, validationErr
   end
 
-  if effective.auto_reply_errors ~= false and senderId ~= nil and request.request_id ~= nil then
-    mrpc.replyError(senderId, request, validationErr.code, validationErr.message, {
-      rednet_protocol = effective.rednet_protocol,
-      details = validationErr.details,
-    })
-  end
-
-  return senderId, nil, nil, validationErr
+  return senderId, toReceivedRequest(request), method, nil
 end
 
 ---Reply to a validated `global_inventory_v1` request with a successful result.

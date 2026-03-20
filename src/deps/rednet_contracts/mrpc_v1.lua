@@ -29,6 +29,7 @@ local schema = require("rednet_contracts.schema_validation")
 ---@field details table|nil
 
 local M = {
+  DEFAULT_RESPONSE_TIMEOUT = 2,
   REDNET_PROTOCOL = "rc.mrpc_v1",
 }
 
@@ -316,7 +317,7 @@ function M.call(rednetId, service, method, params, opts)
 
   rednet.send(rednetId, request, protocol)
 
-  local timeout = opts and opts.timeout or nil
+  local timeout = opts and opts.timeout or M.DEFAULT_RESPONSE_TIMEOUT
 
   while true do
     local senderId, response = rednet.receive(protocol, timeout)
