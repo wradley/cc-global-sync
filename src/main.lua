@@ -16,6 +16,16 @@ prependPackagePath("/lib/log/0.1.0/?/init.lua")
 prependPackagePath("/lib/rednet_contracts/0.1.0/?.lua")
 prependPackagePath("/lib/rednet_contracts/0.1.0/?/init.lua")
 
+local CONFIG_PATH = "/etc/inventory-coordinator/config.lua"
+if not fs.exists(CONFIG_PATH) then
+  local wizard = require("app.wizard")
+  local ok = wizard.run(CONFIG_PATH)
+  if not ok then
+    printError("Setup not completed. Run inventory-coordinator again to configure.")
+    return
+  end
+end
+
 local warehouseRuntime = require("app.runtime")
 local releaseService = require("app.release_service")
 local log = require("log")
@@ -38,7 +48,7 @@ log.config({
   },
 })
 
-local configOk, configOrError = pcall(Config.load, "/etc/inventory-coordinator/config.lua")
+local configOk, configOrError = pcall(Config.load, CONFIG_PATH)
 if not configOk then
   log.panic("Failed to load coordinator config: %s", tostring(configOrError))
 end
