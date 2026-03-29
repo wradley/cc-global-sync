@@ -43,14 +43,8 @@ end
 
 -- Fresh install: no config exists yet.
 if not fs.exists(CONFIG_PATH) then
-  local template = readFile(TEMPLATE_PATH)
-  if not template then
-    printError("Config template not found: " .. TEMPLATE_PATH)
-    return
-  end
-  writeFile(CONFIG_PATH, template)
-  print("Config written to " .. CONFIG_PATH)
-  print("Adjust coordinator.id and network.ender_modem if needed before starting.")
+  print("No config found at " .. CONFIG_PATH .. ".")
+  print("Run inventory-coordinator to complete setup.")
   return
 end
 
