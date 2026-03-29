@@ -2,7 +2,7 @@
 ---@class ReleaseService
 local M = {}
 local contracts = require("rednet_contracts")
-local log = require("deps.log")
+local log = require("log")
 local persistence = require("infra.persistence")
 local Plan = require("model.plan")
 local TransferQueue = require("model.transfer_queue")

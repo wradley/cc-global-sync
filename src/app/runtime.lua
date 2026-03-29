@@ -1,7 +1,7 @@
 --- Compose coordinator runtime state and expose the warehouse-facing mutations
 --- used by the main loop and UI.
 local contracts = require("rednet_contracts")
-local log = require("deps.log")
+local log = require("log")
 
 ---@class CoordinatorUiState
 ---@field view '"summary"'|'"warehouse"'|'"health"'|'"config"'|string
