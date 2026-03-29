@@ -6,8 +6,10 @@ return {
   source_base = "https://raw.githubusercontent.com/wradley/cc-global-sync/refs/heads/main",
   source_prefix = nil,
   bin = "src/main.lua",
+  install_script = "install/setup.lua",
   files = {
     "README.md",
+    "install/setup.lua",
     "install/templates/config.lua",
     "src/main.lua",
     "src/app/release_service.lua",
