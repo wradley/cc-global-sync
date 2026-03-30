@@ -13,8 +13,8 @@ end
 
 prependPackagePath("/lib/log/0.1.0/?.lua")
 prependPackagePath("/lib/log/0.1.0/?/init.lua")
-prependPackagePath("/lib/rednet_contracts/0.1.0/?.lua")
-prependPackagePath("/lib/rednet_contracts/0.1.0/?/init.lua")
+prependPackagePath("/lib/rednet_contracts/0.1.1/?.lua")
+prependPackagePath("/lib/rednet_contracts/0.1.1/?/init.lua")
 
 local CONFIG_PATH = "/etc/inventory-coordinator/config.lua"
 if not fs.exists(CONFIG_PATH) then
