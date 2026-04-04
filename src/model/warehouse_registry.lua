@@ -10,7 +10,6 @@ end
 
 ---@class WarehouseRegistrySnapshotCapacity
 ---@field slot_capacity_used integer|nil
----@field slot_capacity_free integer|nil
 ---@field slot_capacity_total integer|nil
 ---@field storages_with_unknown_capacity integer|nil
 

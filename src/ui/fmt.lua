@@ -127,16 +127,23 @@ function M.formatSlotsLine(snapshot)
   local capacity = snapshot.capacity
   local used = capacity.slot_capacity_used or 0
   local total = capacity.slot_capacity_total
-  local free = capacity.slot_capacity_free
   local usedPercent = M.usedCapacityPercent(snapshot)
 
   if type(total) ~= "number" then
     return "Slots: " .. tostring(used) .. "/? used"
   end
 
-  return tostring(used) .. "/" .. tostring(total) .. " used, "
-    .. tostring(free or "?") .. " free"
-    .. (usedPercent and (" (" .. tostring(usedPercent) .. "%)") or "")
+  local percentLabel
+  if usedPercent then
+    if usedPercent == 0 and used > 0 then
+      percentLabel = "<1%"
+    else
+      percentLabel = tostring(usedPercent) .. "%"
+    end
+  end
+
+  return tostring(used) .. "/" .. tostring(total) .. " used"
+    .. (percentLabel and (" " .. percentLabel) or "")
 end
 
 return M
